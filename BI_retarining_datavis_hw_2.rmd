@@ -1,0 +1,474 @@
+---
+title: "BI_retarining_datavis_hw_2"
+date: "2025-09-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                       warning = FALSE)
+
+# Подгрузка библиотек
+library(tidyverse)
+library(ggplot2)
+# Другие бибилотеки, на ваш вкус
+library(ggpointdensity)
+library(RColorBrewer)
+library(treemapify)
+library(forcats)
+library(ggimage)
+library(patchwork)
+# Загрузка данных
+hogwarts <- read_csv("data/hogwarts_2025.csv")
+```
+
+## Общая тема
+
+```{r}
+theme_for_hogwarts <- theme(
+    plot.title = element_text(size = 10, face = "bold", hjust = 0.5),
+    legend.position = "right",
+    panel.background = element_rect(fill = "antiquewhite1", linewidth = 1, colour = "darkgreen"),
+    panel.grid.major.y = element_line(linewidth = 0.1, linetype = 'solid', colour = "darkgreen"),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank()
+  )
+
+
+faculty_colors <- c(
+  "Гриффиндор" = "#740001", 
+  "Пуффендуй" = "#eeb939", 
+  "Когтевран" = "#0c1a40", 
+  "Слизерин" = "#1a472a"
+  )
+```
+
+```{r Преобразования в факторы, echo=FALSE}
+
+hogwarts <- hogwarts %>%
+  mutate(house = case_when(
+                           house == "Hufflepuff" ~ "Пуффендуй",
+                           house == "Gryffindor" ~ "Гриффиндор",
+                           house == "Ravenclaw" ~ "Когтевран",
+                           house == "Slytherin" ~ "Слизерин",
+                           TRUE ~ house
+                                ),
+         house = as.factor(house),
+         bloodStatus = case_when(
+                                  bloodStatus == "pure-blood" ~ "Чистокровный",
+                                  bloodStatus == "half-blood" ~ "Полукровка",
+                                  bloodStatus == "muggle-born" ~ "Магглорожденный",
+                                  TRUE ~ bloodStatus
+                                ),
+         bloodStatus = as.factor(bloodStatus),
+         sex = case_when(
+                          sex == "female" ~ "Женский",
+                          sex == "male" ~ "Мужской",
+         ),
+         sex = as.factor(sex),
+         wandCore = case_when(
+                            wandCore == "dragon heartstring" ~ "Сердцевина из сердца дракона",
+                            wandCore == "phoenix feather" ~ "Перо феникса",
+                            wandCore == "unicorn hair" ~ "Волос единорога",
+                            TRUE ~ wandCore
+                            ),
+         wandCore = as.factor(wandCore),
+         course = as.factor(course)
+         )
+
+```
+
+
+## Задание 1
+
+```{r}
+runes_vs_potions_plot <- hogwarts %>%
+  ggplot(aes(x = `Study of ancient runes exam`, y = `Charms exam`)) +
+  geom_point(alpha = 0.4, color = "black") +
+  geom_pointdensity() +
+  scale_color_distiller(palette = "Greens") +
+  theme_for_hogwarts +
+  labs(
+    title = "Зависимость оценок за экзамены по Заклинаниям и Древним рунам",
+    x = "Оценка за Древние руны",
+    y = "Оценка за Заклинания",
+    color = "Плотность точек"
+  )
+ 
+
+print(runes_vs_potions_plot)
+```
+
+Поскольку в прошлый раз я выполнил это задание неверно, использовав неправильный экзамен, то и интерпретировать я тогда его правильно не мог. Позволил взять себе график из прошлого ДЗ с некоторыми дополнениями и поправками. Наткнулся на данный пакет "ggpointdensity", подумал что он отлично для данного задание подходит. Его не было в лекции и это ещё одно, альтернативное, и, как мне кажется, достаточно красивое решение проблемы оверплоттинга. По сути это сочетание скаттерплота и heatmap, позволяющее сохранить эстетику первого.
+
+Интерпретация:
+
+Здесь прослеживается достаточно чёткая прямая зависимость оценок друг от друга, с каким-то необычным снижением разброса в районе 50 баллов по обоим экзаменам. 
+
+
+
+
+## Задание 2
+
+Если я правильно понимаю, Mosaic plot это по сути нормированный по процентам bar plot и соединённый вместе, то есть данные распределяются по какой-то оси. В Tree-plot оси не имеют значения, данные распределяются по площади и группируются иерархически. Mosaic, думаю, будет более удобен для сравнения частоты того, сколько раз принимает комбинацию определённых значений две или больше категориальных переменных. То есть, в случае этого датасета, можно было бы сравнить частоты встречаемости определённых сердцевин палочек по факультетам или по происхождению. А Tree-plot, не даёт точных данных, только общее представление, но большому количество категорий, из за простоты группировки по подгруппам.
+
+```{r Подготовка датасета 1, echo=FALSE}
+tree_plot_df <- hogwarts %>%
+  select(course, sex, house, result, c(21:50)) %>%
+  group_by(house, course, sex) %>%
+  summarise(
+    across(
+      where(is.numeric),
+    ~sum(.x, na.rm = TRUE),
+    .names = "sum_{.col}"
+    ),
+    .groups = 'drop'
+  ) 
+
+tree_plot_df_long <- tree_plot_df %>% 
+  select(-sum_result) %>% 
+  pivot_longer(
+    cols = starts_with("sum_"),
+    names_to = "Week_Number",
+    values_to = "result"
+  ) %>% 
+  mutate( Week_Number = str_remove(Week_Number, "^sum_week_"),
+          Week_Number = factor(Week_Number,  levels = 1:30, ordered = TRUE))
+``` 
+
+
+
+```{r}
+tree_plot_hogwarts <- tree_plot_df %>%
+  ggplot(aes(
+    area     = sum_result,
+    subgroup = house,
+    subgroup2 = course,
+    subgroup3 = sex,
+    fill = house
+  ))+
+  geom_treemap(colour = "antiquewhite1", size = 0.3) +
+  geom_treemap_subgroup_border(colour = "black", size = 0.5) +
+  geom_treemap_subgroup2_border(colour = "white", size = 3) +
+  geom_treemap_subgroup2_text(
+    aes(label = course),
+    place = "centre",
+    grow = TRUE,
+    min.size = 10,
+    color = "antiquewhite1"
+  ) + 
+  facet_wrap(~house, ncol = 4) +
+  scale_fill_manual(values = faculty_colors)+
+  theme (
+    legend.position = "none"
+  )
+
+  
+print(tree_plot_hogwarts)
+```
+
+
+
+## Задание 3
+
+```{r Подготовка датасета 2, echo=FALSE}
+task_3_df <- hogwarts %>% 
+  select (id, course, wandCore, result) %>% 
+  filter(course == 5)
+
+wand_colors <- c(
+  "Перо феникса" = "gold3", 
+  "Волос единорога" = "grey40", 
+  "Сердцевина из сердца дракона" = "red4"
+  )  
+```
+
+
+
+```{r}
+lollipop_plot <- ggplot(task_3_df, aes( x = id, y = result, color = wandCore)) +
+  geom_point(size = 2) +
+  geom_segment(aes(x = id, xend = id, y = 0, yend = result),
+               color = "grey12", linewidth = 0.3, alpha = 0.7,
+               show.legend = FALSE) +
+  scale_color_manual(values = wand_colors) +
+  theme_for_hogwarts +
+  labs(
+    title = "Баллы студентов 5 курса за год",
+    x = "",
+    y = "Результат",
+    color = "Сердцевина палочки"
+  )
+
+print(lollipop_plot)
+```
+
+
+
+
+
+
+
+## Задание 4
+ААААААААААААААААААААААААААААААААААААААААААААААААААААААААААААААААААААААААА
+БОЛЬ. За что вы так с нами?
+
+
+Ну штош....
+1) fct_reorder - перетасованы недели.
+
+2) Смещён baseline.
+
+3) Ордината перегружена значениями, слишком маленький шаг, наползают друг на друга. плюс она Не покрывает весь график.
+
+4) Подпись ординаты ms. Что это - неясно, возможно вообще не баллы.Возможно миллисекунды.
+
+5) Подпись color. аймблю дабудидабудай. Что такое blue - неясно. Возможно песня.
+
+6) week_number. недель 40, а судя по подписям только 6.
+
+7) Линию тренда кажется рисовали вручную.
+
+8) Дело вкуса конечно, но очень странные цветовые решения.
+
+9) График как будто ехал в "Ночном рыцаре", но так и не выправился обратно. Непропорционально сужен, возможно длля искажения данных.
+
+10) Ну и медведь. 
+
+11) И недели взяты не с равными промежутками ещё.
+
+12) Заголовок и подзаголовок перепутаны местами, заголовок не вмещается в формат. И они на разных языках.
+
+
+Помимо всего этого, абсолютно непонятно что отображается - сумма баллов, среднее, медиана или что-то ещё. по оси Y щкала от 0.8 до 1.9, поэтому предполагаю, что это медиана, но в таком случае неясно что означают errorbar-ы (явно не SD и не SE). судя по всему все errorbar-ы одинаковые, и они +-0.05, что тоже является очень неправильным.
+
+Все интепретации графика, в силу того, что всё там сделано крайне странно, считаю неверными. Хороших практик, пожалуй, я здесь не вижу.
+
+
+```{r Подготовка датасета 3, echo=FALSE}
+normal_plot_data <- hogwarts %>% 
+  select(week_1, week_5, week_10, week_15, week_20, week_25, week_30, week_35, week_40) %>% 
+  pivot_longer(
+    cols = everything(),
+    names_to = "week_number",
+    values_to = "selected_result"
+  ) %>% 
+  mutate( week_number = str_remove(week_number, "^week_"),
+          week_number = factor(week_number, levels = 1:40, ordered = TRUE))
+
+```
+
+
+```{r}
+normal_plot <- ggplot(normal_plot_data, aes(x = week_number, y = selected_result)) +
+  geom_boxplot(
+    fill = "forestgreen",
+    colour = "red4",  
+    outlier.alpha = 0.35, 
+    outlier.shape = 16,    
+    outlier.size  = 2   
+  ) +
+  scale_y_continuous(
+    breaks = seq(-60, 60, by = 10)
+  ) +
+  theme_for_hogwarts +
+  labs(
+    title = "Анализ динамики баллов у учеников Хогвартс в течении учебного года",
+    x = "Номер недели", 
+    y = "Баллы учеников")
+
+print(normal_plot)
+```
+
+
+Приложил подорожник, кажется помогло. Убрали всё лишнее, сделали нормальные пропорции, выстроили недели в правильном порядке. Вместо барплота - боксплот, что-бы показать не сумму баллов всех учеников, а распределение, это корректнее на мой взгляд, если мы пытаемся понять общую картину о том какие баллы получают ученики. 
+
+
+
+
+## Задание 5
+
+```{r Подготовка датасета 4, echo=FALSE}
+
+bar_colors <- c(
+  "14" = "green1",
+  "11" = "olivedrab",
+  "8" = "red4",
+  "18" = "steelblue4",
+  "27" = "grey24",
+  "36" = "grey4"
+)
+
+fckd_plot_data <- hogwarts %>% 
+  select(week_14, week_11, week_8, week_18, week_27, week_36) %>% 
+  pivot_longer(
+    cols = everything(),
+    names_to = "week_number",
+    values_to = "selected_result"
+  ) %>% 
+  group_by(week_number) %>% 
+  summarise(
+    mean = mean(selected_result, na.rm = TRUE),
+    sd   = sd(selected_result, na.rm = TRUE),
+    se   = sd / sqrt(n()),
+    ymin = mean - 0.05,         
+    ymax = mean + 0.05,
+    .groups = "drop"
+  ) %>% 
+  mutate( week_number = str_remove(week_number, "^week_"),
+          week_number = factor(week_number, levels = c(14,11,8,18,27,36), ordered = TRUE))
+  
+```
+
+
+
+```{r fig.width=8, fig.height=25}
+normal_plot <- ggbackground(ggplot(fckd_plot_data, aes(x = week_number, y = mean, fill = week_number)) +
+  geom_col(
+    position = "dodge", 
+    alpha = 0.6, 
+    width = 0.7, 
+    colour = "tomato1") +
+    scale_fill_manual(
+      name = "week_number",
+      values = bar_colors,
+      breaks = c( "8", "11", "14","18", "27", "36"),
+   labels = c ("3/6","2/6","1/6","4/6", "5/6", "6/6")
+   ) +
+   geom_errorbar(
+    aes(ymin = ymin, ymax =  ymax),
+    width = 0.7,
+    linewidth = 3,
+    color = "black") +
+    geom_line(aes(group = 1), linewidth = 3, colour = "black") +
+  scale_y_continuous(
+    breaks = seq(0.8, 1.9, by = 0.01) 
+    ) +
+  coord_cartesian(ylim = c(0.7, NA)) +
+  labs(
+    title    = "Эмоциональное выгорание преподавателей или лень учеников?",
+    subtitle = "Dramatical decreasing of mean score for every subsequent week in Hogwarts",
+    x = "fct_reorder(week_number, ms, .desc = TRUE)",
+    y = "ms"
+  ) +
+  theme(
+    plot.title   = element_text(size = 10, face = "bold", hjust = 0, colour = "black"),
+    plot.subtitle= element_text(size = 16, face = "italic", hjust = 0, colour = "orangered4"),
+    legend.title = element_text(size = 12, face = "bold", colour = "black"),
+    legend.text  = element_text(size = 10, colour = "black"),
+    panel.grid.major.x = element_line (colour = "black", linewidth = 1),
+    panel.grid.minor.y = element_line(colour = "black", linewidth = 0.6),
+    panel.grid.major.y = element_line(colour = "black", linewidth = 1),
+    legend.position = "right",
+    axis.text.y = element_text(
+      colour = "black",
+      size   = 11,
+      angle  = 90
+    ),
+    axis.text.x = element_text(
+      colour = "black",
+      size   = 11
+    )
+  ) +
+    geom_label(aes(x = 2.6, y = 2.2, label = "В начале учебного года педагоги \n расположены мотивировать учащихся \n и дают им большее количество баллов"),
+             fill = "white",      
+             colour = "green",    
+             size = 6,          
+             label.size = 0.4,     
+             label.r = unit(2, "pt"),
+             label.padding = unit(4, "pt")
+             ) +
+    geom_label(aes(x = 3.8, y = 0.87, label = "К концу года учителя применяют всё \n больше репрессивных мер \n в виде лишения баллов"),
+             fill = "white",      
+             colour = "red",    
+             size = 6,          
+             label.size = 0.4,     
+             label.r = unit(2, "pt"),
+             label.padding = unit(4, "pt")) +
+    geom_curve(aes(x = 2.6, y = 2.2, xend = 1, yend = 2),
+           curvature = 0.5,
+           arrow = arrow(length = unit(5, "mm"), type = "closed"),
+           colour = "green", 
+           linewidth = 0.8,
+           ) +
+     geom_curve(aes(x = 3.8, y = 0.87, xend = 6, yend = 0.7),
+           curvature = -0.7,
+           arrow = arrow(length = unit(5, "mm"), type = "closed"),
+           colour = "red", 
+           linewidth = 0.8,
+           ) +
+    geom_segment(
+    aes(x = 3, y = 2.15, xend = 6, yend = 0.81),
+    colour = "red", 
+    linewidth = 3, 
+    arrow = arrow(
+      length = unit(5, "mm"),   
+      type   = "closed"
+    )
+    )
+  
+  
+  
+  ,
+  "images/fire_bear_2.png")
+print(normal_plot)
+```
+
+
+
+За это задание я вас немножко ненавижу. Я очень люблю рисовать графики, а мой СДВГ-шный перфекционист в мозгах кричал мне всю дорогу "Это не тот оттенок, эта табличка должна быть на 5 пикселей левее!!! Курватура стрелки не та!" И это при том, что его ещё приходилось успокаивать по поводу того, что мы в принципе такое страшилище делаем...
+На него ушло 6 часов.
+как добавить легенду для несуществующего параметра я так и не понял. Ту, которая аймблюдабудидабудай. И подпись абсциссы я наверное считерив сделал.
+## Задание 6
+
+```{r fig.width=16, fig.height=10}
+set.seed(2025)
+
+colours_ <- colours()
+res_colours <- colours_[colours_ %>%  str_detect("grey|gray|black|white", negate = TRUE)] %>% 
+  sample(size = 36)
+
+
+plot_histogram <- function(data, score_col, fill_color, bins, title = NULL, subtitle = NULL) {
+
+
+  hplot <- ggplot(data, aes(x = .data [[score_col]])) +
+    geom_histogram(
+      bins =  bins,
+      fill = fill_color, 
+      colour = "darkgreen", 
+      linewidth = 0.2
+    ) +
+    labs(
+      title = title, 
+      subtitle = subtitle, 
+      x = NULL, 
+      y = NULL) +
+    theme(
+          plot.title = element_text(size = 10, face = "bold", hjust = 0.5),
+    legend.position = "none",
+    panel.background = element_rect(fill = "antiquewhite1", linewidth = 1, colour = "darkgreen"),
+    panel.grid.major.y = element_line(linewidth = 0.1, linetype = 'solid', colour = "darkgreen"),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank()
+    )
+}
+
+plots_list <- map(
+  res_colours,
+  ~ plot_histogram(
+      data = hogwarts,
+      score_col = "result", 
+      fill_color = .x,       
+      bins = 30,      
+      title = .x       
+    )
+)
+
+combined_plot <-
+  wrap_plots(plots_list, ncol = 6)
+
+print(combined_plot)
+```
